@@ -24,7 +24,10 @@ export function executable(name, args) {
       if (native && existsSync(native)) return [native, args];
     } else {
       const phar = join(dirname(path), 'composer.phar');
-      if (/^php\s+"%~dp0composer\.phar"\s+%\*\s*$/im.test(body) && existsSync(phar)) return executable('php', [phar, ...args]);
+      // setup-php's pinned add_tools.ps1 writes this four-line Windows launcher
+      // and Edit-ComposerConfig copies its downloaded tool to composer.phar.
+      const setupPhpLauncher = body.replace(/^\uFEFF/, '').trim().replaceAll('\r\n', '\n') === '@ECHO off\nsetlocal DISABLEDELAYEDEXPANSION\nSET BIN_TARGET=%~dp0/composer\nphp %BIN_TARGET% %*';
+      if ((/^php\s+"%~dp0composer\.phar"\s+%\*\s*$/im.test(body) || setupPhpLauncher) && existsSync(phar)) return executable('php', [phar, ...args]);
     }
   }
   throw new Error(`Unsupported ${name} launcher`);

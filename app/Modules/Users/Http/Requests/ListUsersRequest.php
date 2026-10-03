@@ -25,6 +25,6 @@ final class ListUsersRequest extends BackendRequest
             throw new \LogicException('Validated pagination');
         }
 
-return new UserQuery($page, $limit, Input::optionalString($v, 'search'), Input::optionalString($v, 'sortBy') ?? 'createdAt', Input::optionalString($v, 'orderBy') ?? 'desc', Input::optionalString($v, 'fields'));
+        return new UserQuery($page, $limit, Input::optionalString($v, 'search'), Input::optionalString($v, 'sortBy') ?? 'createdAt', Input::optionalString($v, 'orderBy') ?? 'desc', Input::optionalString($v, 'fields'));
     }
 }

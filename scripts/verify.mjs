@@ -15,7 +15,7 @@ const native = [
   ['platform', 'php', ['tests/Fixtures/runtime.php', 'platform']],
   ['composer-validate', 'composer', ['validate', '--strict']],
   ['composer-audit', 'composer', ['audit', '--locked', '--no-interaction']],
-  ['pint', 'php', ['vendor/bin/pint', '--test']],
+  ['pint', 'php', ['vendor/bin/pint', '--test', '--cache-file', join(logs, 'pint-cache.json')]],
   ['larastan', 'php', ['vendor/bin/phpstan', 'analyse', '--memory-limit=1G', '--no-progress']],
   ['unit', 'php', ['vendor/bin/phpunit', '--testsuite', 'Unit', '--log-junit', join(logs, 'unit.xml')]],
   ['native-cache', 'php', ['tests/Fixtures/cache.php', logs]],

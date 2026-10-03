@@ -24,6 +24,6 @@ final class UploadRequest extends BackendRequest
             throw ValidationException::withMessages(['file' => 'Required file']);
         }
 
-return $file;
+        return $file;
     }
 }
