@@ -31,6 +31,7 @@ jobs:
       - name: Keep native diagnostics in runner temporary storage
         run: node -e "require('node:fs').appendFileSync(process.env.GITHUB_ENV, ['TMPDIR','TMP','TEMP'].map(key => key+'='+process.env.RUNNER_TEMP).join('\n')+'\n')"
       - run: composer install --no-interaction --prefer-dist
+      - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: composer build
       - run: node scripts/verify.mjs --stage native
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
