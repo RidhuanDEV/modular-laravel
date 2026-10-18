@@ -18,6 +18,11 @@ use Illuminate\Support\Facades\Hash;
 
 final class AuthService
 {
+    private const SESSION_DAYS = 90;
+    private const TOKEN_DAYS = 30;
+
+    private static ?string $dummyHash = null;
+
     public function __construct(
         private readonly JwtService $jwt,
         private readonly Audit $audit,
@@ -56,23 +61,23 @@ final class AuthService
     public function login(Credentials $data): Tokens
     {
         $user = User::query()->where('email', $data->email)->first();
-        // Fixed bcrypt cost-12 hash: unknown accounts pay the same verification cost.
+        // Unknown accounts verify against a hash from the active hasher, so timing matches any configured cost or driver.
+        self::$dummyHash ??= Hash::make(bin2hex(random_bytes(16)));
         $matches = Hash::check(
             $data->password,
-            $user === null
-                ? '$2y$12$JcK1rxsdrOYpwFs/uQgkOOarUTKF1cr7MrMDF4TxrJFKNDskCgWOe'
-                : $user->password,
+            $user === null ? self::$dummyHash : $user->password,
         );
         if ($user === null || !$matches) {
             throw new ApiException(401, 'Invalid email or password');
         }
         $raw = self::opaque();
         DB::transaction(function () use ($user, $raw): void {
-            $expires = $this->clock->now()->addDays(30);
+            $now = $this->clock->now();
             $family = RefreshFamily::query()->create([
                 'user_id' => $user->id,
-                'expires_at' => $expires,
+                'expires_at' => $now->addDays(self::SESSION_DAYS),
             ]);
+            $expires = $now->addDays(self::TOKEN_DAYS);
             RefreshToken::query()->create([
                 'family_id' => $family->id,
                 'user_id' => $user->id,
@@ -132,11 +137,10 @@ final class AuthService
 
                 return null;
             }
-            $expiry = $now->addDays(30);
+            // The family lifetime is absolute: rotation never extends it.
+            $expiry = $now->addDays(self::TOKEN_DAYS)->min($family->expires_at);
             $token->consumed_at = $now;
             $token->save();
-            $family->expires_at = $expiry;
-            $family->save();
             RefreshToken::query()->create([
                 'family_id' => $family->id,
                 'user_id' => $actor->id,
