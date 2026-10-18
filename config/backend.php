@@ -18,8 +18,10 @@ return [
     'proxy' => env('TRUST_PROXY', ''),
     // API docs reveal every route and schema; off in production unless explicitly enabled.
     'docs' => env('DOCS_ENABLED', env('APP_ENV') !== 'production'),
-    // body (default) returns the refresh token in JSON; cookie keeps it in an httpOnly cookie.
     'refresh' => [
+        'idle' => env('REFRESH_TOKEN_IDLE_DAYS', '30'),
+        'absolute' => env('REFRESH_TOKEN_ABSOLUTE_DAYS', '90'),
+        // body (default) returns the refresh token in JSON; cookie keeps it in an httpOnly cookie.
         'transport' => env('REFRESH_TOKEN_TRANSPORT', 'body'),
         'name' => env('REFRESH_COOKIE_NAME', 'refresh_token'),
         // lax/strict for same-site frontends (including sibling subdomains); none for cross-site.

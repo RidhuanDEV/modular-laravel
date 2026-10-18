@@ -11,16 +11,15 @@ use App\Modules\Auth\Models\RefreshToken;
 use App\Modules\Roles\Models\Role;
 use App\Modules\Users\Models\User;
 use App\Support\Audit\Audit;
+use App\Support\Config\Settings;
 use App\Support\Http\ApiException;
 use App\Support\Time\Clock;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
 final class AuthService
 {
-    private const SESSION_DAYS = 90;
-    private const TOKEN_DAYS = 30;
-
     private static ?string $dummyHash = null;
 
     public function __construct(
@@ -61,11 +60,12 @@ final class AuthService
     public function login(Credentials $data): Tokens
     {
         $user = User::query()->where('email', $data->email)->first();
-        // Unknown accounts verify against a hash from the active hasher, so timing matches any configured cost or driver.
-        self::$dummyHash ??= Hash::make(bin2hex(random_bytes(16)));
+        // Unknown accounts verify against a hash from the active hasher, so the
+        // cost (and driver) always matches real accounts.
+        $dummy = self::$dummyHash ??= Hash::make(bin2hex(random_bytes(16)));
         $matches = Hash::check(
             $data->password,
-            $user === null ? self::$dummyHash : $user->password,
+            $user === null ? $dummy : $user->password,
         );
         if ($user === null || !$matches) {
             throw new ApiException(401, 'Invalid email or password');
@@ -73,16 +73,19 @@ final class AuthService
         $raw = self::opaque();
         DB::transaction(function () use ($user, $raw): void {
             $now = $this->clock->now();
+            // The family expiry is the absolute session lifetime and never moves.
+            $expires = $now->addDays(
+                Settings::integer('backend.refresh.absolute', 1, 3650),
+            );
             $family = RefreshFamily::query()->create([
                 'user_id' => $user->id,
-                'expires_at' => $now->addDays(self::SESSION_DAYS),
+                'expires_at' => $expires,
             ]);
-            $expires = $now->addDays(self::TOKEN_DAYS);
             RefreshToken::query()->create([
                 'family_id' => $family->id,
                 'user_id' => $user->id,
                 'token_hash' => hash('sha256', $raw),
-                'expires_at' => $expires,
+                'expires_at' => self::idleExpiry($now, $expires),
             ]);
             $this->audit->write(
                 'LOGIN',
@@ -137,22 +140,23 @@ final class AuthService
 
                 return null;
             }
-            // The family lifetime is absolute: rotation never extends it.
-            $expiry = $now->addDays(self::TOKEN_DAYS)->min($family->expires_at);
             $token->consumed_at = $now;
             $token->save();
+            // Rotation never extends the family: its expiry is the absolute lifetime.
             RefreshToken::query()->create([
                 'family_id' => $family->id,
                 'user_id' => $actor->id,
                 'token_hash' => hash('sha256', $replacement),
-                'expires_at' => $expiry,
+                'expires_at' => self::idleExpiry($now, $family->expires_at),
             ]);
             $this->audit->write(
                 'REFRESH',
                 'auth',
                 $family->id,
                 $actor->id,
-                after: ['expiresAt' => $expiry->toIso8601ZuluString()],
+                after: [
+                    'expiresAt' => $family->expires_at->toIso8601ZuluString(),
+                ],
             );
 
             return $actor;
@@ -191,6 +195,18 @@ final class AuthService
                 after: ['revoked' => true],
             );
         });
+    }
+
+    /** A token lives for the idle window but never past its family's expiry. */
+    private static function idleExpiry(
+        CarbonImmutable $now,
+        CarbonImmutable $family,
+    ): CarbonImmutable {
+        $idle = $now->addDays(
+            Settings::integer('backend.refresh.idle', 1, 3650),
+        );
+
+        return $idle->lessThan($family) ? $idle : $family;
     }
 
     private static function opaque(): string
